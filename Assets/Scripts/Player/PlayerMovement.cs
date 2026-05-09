@@ -4,6 +4,11 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerInputManager))]
 public class PlayerMovement : MonoBehaviour
 {
+    /// <summary>
+    /// Controla si el jugador puede moverse. Usado por PlayerHealth durante respawn/muerte.
+    /// </summary>
+    public bool CanMove { get; set; } = true;
+
     [Header("Movement")]
     public float maxSpeed = 8f;
     public float acceleration = 15f;
@@ -15,9 +20,17 @@ public class PlayerMovement : MonoBehaviour
     public float minJumpHeight = 1f;
     public float timeToJumpApex = 0.4f;
     
-    [Header("Long Jump (Dash)")]
-    public float longJumpForwardForce = 15f;
-    public float longJumpHeight = 2f;
+    [Header("Dash")]
+    [Tooltip("Velocidad del dash.")]
+    public float dashSpeed = 20f;
+    [Tooltip("Duración del dash en segundos.")]
+    public float dashDuration = 0.25f;
+    [Tooltip("Tiempo de espera entre dashes en segundos.")]
+    public float dashCooldown = 1f;
+
+    [Header("Knockback")]
+    [Tooltip("Duración del estado de knockback donde el jugador no puede moverse.")]
+    public float knockbackDuration = 0.3f;
 
     [Header("Physics")]
     public float gravityMultiplier = 1.5f; // Para caer más rápido que al subir
@@ -31,7 +44,15 @@ public class PlayerMovement : MonoBehaviour
     private float _maxJumpVelocity;
     private float _minJumpVelocity;
     
-    private bool _isLongJumping;
+    // Dash state
+    private bool _isDashing;
+    private float _dashTimer;
+    private float _dashCooldownTimer;
+    private Vector3 _dashDirection;
+
+    // Knockback state
+    private bool _isKnockedBack;
+    private float _knockbackTimer;
 
     void Start()
     {
@@ -52,8 +73,30 @@ public class PlayerMovement : MonoBehaviour
     void Update()
     {
         HandleGravity();
-        HandleMovement();
-        HandleJumping();
+
+        if (_isKnockedBack)
+        {
+            // Durante el knockback, no se acepta input pero la gravedad sigue actuando
+            _knockbackTimer -= Time.deltaTime;
+            if (_knockbackTimer <= 0f)
+                _isKnockedBack = false;
+        }
+        else if (CanMove)
+        {
+            HandleDash();
+
+            if (!_isDashing)
+            {
+                HandleMovement();
+                HandleJumping();
+            }
+        }
+        else
+        {
+            // Si no puede moverse, frenar la velocidad horizontal
+            _velocity.x = 0f;
+            _velocity.z = 0f;
+        }
         
         // Mover el personaje utilizando la velocidad acumulada
         _controller.Move(_velocity * Time.deltaTime);
@@ -79,34 +122,31 @@ public class PlayerMovement : MonoBehaviour
 
         if (_controller.isGrounded)
         {
-            if (!_isLongJumping) 
+            if (targetDirection.magnitude > 0.1f)
             {
-                if (targetDirection.magnitude > 0.1f)
-                {
-                    // Acelerar
-                    Vector3 currentHorizontalVel = new Vector3(_velocity.x, 0, _velocity.z);
-                    Vector3 newHorizontalVel = Vector3.Lerp(currentHorizontalVel, targetDirection * maxSpeed, Time.deltaTime * acceleration);
-                    _velocity.x = newHorizontalVel.x;
-                    _velocity.z = newHorizontalVel.z;
+                // Acelerar
+                Vector3 currentHorizontalVel = new Vector3(_velocity.x, 0, _velocity.z);
+                Vector3 newHorizontalVel = Vector3.Lerp(currentHorizontalVel, targetDirection * maxSpeed, Time.deltaTime * acceleration);
+                _velocity.x = newHorizontalVel.x;
+                _velocity.z = newHorizontalVel.z;
 
-                    // Rotar hacia la dirección de movimiento
-                    Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
-                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
-                }
-                else
-                {
-                    // Desacelerar (fricción)
-                    Vector3 currentHorizontalVel = new Vector3(_velocity.x, 0, _velocity.z);
-                    Vector3 newHorizontalVel = Vector3.Lerp(currentHorizontalVel, Vector3.zero, Time.deltaTime * deceleration);
-                    _velocity.x = newHorizontalVel.x;
-                    _velocity.z = newHorizontalVel.z;
-                }
+                // Rotar hacia la dirección de movimiento
+                Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+            }
+            else
+            {
+                // Desacelerar (fricción)
+                Vector3 currentHorizontalVel = new Vector3(_velocity.x, 0, _velocity.z);
+                Vector3 newHorizontalVel = Vector3.Lerp(currentHorizontalVel, Vector3.zero, Time.deltaTime * deceleration);
+                _velocity.x = newHorizontalVel.x;
+                _velocity.z = newHorizontalVel.z;
             }
         }
         else
         {
             // Movimiento en el aire (Air Control)
-            if (targetDirection.magnitude > 0.1f && !_isLongJumping)
+            if (targetDirection.magnitude > 0.1f)
             {
                 Vector3 currentHorizontalVel = new Vector3(_velocity.x, 0, _velocity.z);
                 // Control en el aire reducido (30% de aceleración normal)
@@ -120,36 +160,56 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
+    private void HandleDash()
+    {
+        // Cooldown del dash
+        if (_dashCooldownTimer > 0f)
+        {
+            _dashCooldownTimer -= Time.deltaTime;
+        }
+
+        // Iniciar dash con el botón de agacharse (Control/C)
+        if (_input.CrouchInput && !_isDashing && _dashCooldownTimer <= 0f)
+        {
+            _isDashing = true;
+            _dashTimer = dashDuration;
+            _dashCooldownTimer = dashCooldown;
+
+            // Dirección del dash: hacia donde mira el jugador
+            _dashDirection = transform.forward;
+
+            Debug.Log("¡Dash!");
+        }
+
+        // Ejecutar dash
+        if (_isDashing)
+        {
+            _velocity.x = _dashDirection.x * dashSpeed;
+            _velocity.z = _dashDirection.z * dashSpeed;
+            // Mantener la Y sin cambios para que la gravedad siga actuando
+
+            _dashTimer -= Time.deltaTime;
+            if (_dashTimer <= 0f)
+            {
+                _isDashing = false;
+            }
+        }
+    }
+
     private void HandleJumping()
     {
         if (_controller.isGrounded)
         {
-            _isLongJumping = false;
-
             if (_input.JumpInputDown)
             {
-                // Condición para Salto Largo: Agachado + Moviéndose con cierta velocidad
-                Vector3 horizontalSpeed = new Vector3(_velocity.x, 0, _velocity.z);
-                if (_input.CrouchInput && horizontalSpeed.magnitude > 2f)
-                {
-                    // Long Jump (Dash hacia adelante y arriba)
-                    _velocity.y = Mathf.Sqrt(2 * Mathf.Abs(_gravity) * longJumpHeight);
-                    Vector3 jumpDirection = transform.forward; 
-                    _velocity.x = jumpDirection.x * longJumpForwardForce;
-                    _velocity.z = jumpDirection.z * longJumpForwardForce;
-                    _isLongJumping = true;
-                }
-                else
-                {
-                    // Salto Normal
-                    _velocity.y = _maxJumpVelocity;
-                }
+                // Salto Normal
+                _velocity.y = _maxJumpVelocity;
             }
         }
         else
         {
             // Variable jump height: Si soltamos el botón antes de llegar al punto más alto
-            if (_input.JumpInputUp && _velocity.y > _minJumpVelocity && !_isLongJumping)
+            if (_input.JumpInputUp && _velocity.y > _minJumpVelocity)
             {
                 _velocity.y = _minJumpVelocity;
             }
@@ -164,7 +224,34 @@ public class PlayerMovement : MonoBehaviour
         }
 
         // Multiplicador de gravedad al caer para un game feel menos "flotante"
-        float gravityMultiplierThisFrame = (_velocity.y < 0 && !_isLongJumping) ? gravityMultiplier : 1f;
+        float gravityMultiplierThisFrame = (_velocity.y < 0) ? gravityMultiplier : 1f;
         _velocity.y += _gravity * gravityMultiplierThisFrame * Time.deltaTime;
+    }
+
+    // ============================================================
+    // KNOCKBACK - Llamado por PlayerHealth
+    // ============================================================
+
+    /// <summary>
+    /// Aplica un impulso de knockback. El jugador pierde control temporalmente.
+    /// </summary>
+    public void ApplyKnockback(Vector3 direction, float force, float upForce)
+    {
+        _velocity = direction * force;
+        _velocity.y = upForce;
+        _isKnockedBack = true;
+        _knockbackTimer = knockbackDuration;
+        _isDashing = false; // Cancelar dash si estaba en uno
+    }
+
+    /// <summary>
+    /// Resetea toda la velocidad a cero. Usado al teletransportar al jugador.
+    /// </summary>
+    public void ResetVelocity()
+    {
+        _velocity = Vector3.zero;
+        _isKnockedBack = false;
+        _knockbackTimer = 0f;
+        _isDashing = false;
     }
 }
