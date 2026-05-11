@@ -9,6 +9,12 @@ public class PlayerMovement : MonoBehaviour
     /// </summary>
     public bool CanMove { get; set; } = true;
 
+    // Propiedades de solo lectura para otros sistemas (partículas, audio, etc.)
+    public bool IsGrounded => _controller != null && _controller.isGrounded;
+    public bool IsDashing => _isDashing;
+    public float HorizontalSpeed => _controller != null ?
+        new Vector3(_controller.velocity.x, 0f, _controller.velocity.z).magnitude : 0f;
+
     [Header("Movement")]
     public float maxSpeed = 8f;
     public float acceleration = 15f;
@@ -253,5 +259,23 @@ public class PlayerMovement : MonoBehaviour
         _isKnockedBack = false;
         _knockbackTimer = 0f;
         _isDashing = false;
+    }
+
+    // ============================================================
+    // DETECCIÓN DE PLATAFORMAS - CharacterController no genera
+    // OnCollisionEnter en otros objetos, así que se detecta desde aquí.
+    // ============================================================
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        // Si pisamos una plataforma que cae (estamos encima, no chocando de lado)
+        if (hit.normal.y > 0.5f)
+        {
+            FallingPlatform platform = hit.collider.GetComponent<FallingPlatform>();
+            if (platform != null)
+            {
+                platform.TriggerFall();
+            }
+        }
     }
 }

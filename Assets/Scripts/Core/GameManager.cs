@@ -39,14 +39,16 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
+
+        // Inicializar estado aquí (Awake) para que esté listo
+        // antes de que UIManager.Start() lea los valores
+        CurrentLives = startingLives;
+        CoinsCollected = 0;
+        CurrentState = GameState.Playing;
     }
 
     void Start()
     {
-        CurrentLives = startingLives;
-        CoinsCollected = 0;
-        CurrentState = GameState.Playing;
-
         // Asegurar que el cursor esté visible y el tiempo corra
         Time.timeScale = 1f;
         Cursor.lockState = CursorLockMode.Locked;

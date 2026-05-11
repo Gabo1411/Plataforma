@@ -1,26 +1,28 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 /// <summary>
 /// Maneja toda la interfaz del juego: HUD (monedas, vidas)
 /// y paneles de victoria/derrota con temática de "salvar la isla".
+/// Usa TextMeshPro para los textos.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
     [Header("HUD - Elementos en pantalla")]
-    [Tooltip("Texto que muestra el contador de monedas (ej: '5 / 10').")]
-    public Text coinsText;
-    [Tooltip("Texto que muestra las vidas restantes.")]
-    public Text livesText;
+    [Tooltip("Texto TMP que muestra el contador de monedas (ej: '5 / 10').")]
+    public TMP_Text coinsText;
+    [Tooltip("Texto TMP que muestra las vidas restantes.")]
+    public TMP_Text livesText;
 
     [Header("Panel de Victoria")]
     public GameObject winPanel;
-    public Text winMessageText;
+    public TMP_Text winMessageText;
     public Button winRestartButton;
 
     [Header("Panel de Derrota")]
     public GameObject losePanel;
-    public Text loseMessageText;
+    public TMP_Text loseMessageText;
     public Button loseRestartButton;
 
     void Start()
@@ -70,7 +72,7 @@ public class UIManager : MonoBehaviour
         if (coinsText != null)
         {
             int target = GameManager.Instance != null ? GameManager.Instance.coinsToWin : 0;
-            coinsText.text = $"{coins} / {target}";
+            coinsText.text = $"Monedas: {coins} / {target}";
         }
     }
 
@@ -78,11 +80,8 @@ public class UIManager : MonoBehaviour
     {
         if (livesText != null)
         {
-            // Mostrar vidas con corazones
-            string hearts = "";
-            for (int i = 0; i < lives; i++)
-                hearts += "\u2764 "; // ❤
-            livesText.text = hearts.TrimEnd();
+            // Formato compatible con LiberationSans SDF (sin emojis)
+            livesText.text = $"Vidas: x{lives}";
         }
     }
 
@@ -92,7 +91,7 @@ public class UIManager : MonoBehaviour
         {
             winPanel.SetActive(true);
             if (winMessageText != null)
-                winMessageText.text = "¡SALVASTE LA ISLA!\nLas monedas ancestrales han restaurado\nel equilibrio de la isla.";
+                winMessageText.text = "SALVASTE LA ISLA!\nLas monedas ancestrales han restaurado\nel equilibrio de la isla.";
         }
     }
 
@@ -102,7 +101,7 @@ public class UIManager : MonoBehaviour
         {
             losePanel.SetActive(true);
             if (loseMessageText != null)
-                loseMessageText.text = "LA ISLA FUE DESTRUIDA...\nNo lograste reunir las monedas a tiempo.\n¿Intentar de nuevo?";
+                loseMessageText.text = "LA ISLA FUE DESTRUIDA...\nNo lograste reunir las monedas a tiempo.\nIntentar de nuevo?";
         }
     }
 
