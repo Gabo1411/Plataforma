@@ -1,9 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Genera partículas de polvo al caminar/correr y de viento al hacer dash.
+/// Genera partículas de polvo al caminar/correr y una estela (trail)
+/// tipo Blink de Tracer al hacer dash.
 /// Se coloca en el mismo GameObject del jugador.
-/// Los ParticleSystems se crean automáticamente por código.
 /// </summary>
 [RequireComponent(typeof(PlayerMovement))]
 public class PlayerParticles : MonoBehaviour
@@ -16,28 +16,33 @@ public class PlayerParticles : MonoBehaviour
     [Tooltip("Partículas por segundo al moverse a máxima velocidad.")]
     public float dustEmissionRate = 15f;
 
-    [Header("Viento del Dash")]
-    [Tooltip("Color de las líneas de viento.")]
-    public Color dashColor = new Color(0.8f, 0.9f, 1f, 0.7f);
-    [Tooltip("Cantidad de partículas del dash.")]
-    public int dashParticleCount = 25;
+    [Header("Estela del Dash (estilo Tracer)")]
+    [Tooltip("Color de la estela al inicio.")]
+    public Color trailStartColor = new Color(0.4f, 0.7f, 1f, 0.9f);
+    [Tooltip("Color de la estela al final.")]
+    public Color trailEndColor = new Color(0.6f, 0.85f, 1f, 0f);
+    [Tooltip("Ancho de la estela.")]
+    public float trailWidth = 0.5f;
+    [Tooltip("Tiempo en segundos que tarda la estela en desvanecerse.")]
+    public float trailFadeTime = 0.3f;
 
     private PlayerMovement _movement;
     private ParticleSystem _dustPS;
-    private ParticleSystem _dashPS;
     private ParticleSystem.EmissionModule _dustEmission;
+    private TrailRenderer _dashTrail;
+    private bool _wasDashing;
 
     void Start()
     {
         _movement = GetComponent<PlayerMovement>();
         CreateDustSystem();
-        CreateDashSystem();
+        CreateDashTrail();
     }
 
     void Update()
     {
         HandleDust();
-        HandleDash();
+        HandleDashTrail();
     }
 
     // ============================================================
@@ -68,26 +73,30 @@ public class PlayerParticles : MonoBehaviour
         }
     }
 
-    private bool _wasDashing;
+    // ============================================================
+    // ESTELA DEL DASH (TRAIL RENDERER)
+    // ============================================================
 
-    private void HandleDash()
+    private void HandleDashTrail()
     {
-        if (_dashPS == null) return;
+        if (_dashTrail == null) return;
 
-        // Disparar burst de partículas al INICIAR el dash
-        if (_movement.IsDashing && !_wasDashing)
+        if (_movement.IsDashing)
         {
-            // Posicionar detrás del jugador
-            _dashPS.transform.position = transform.position;
-            _dashPS.transform.rotation = Quaternion.LookRotation(-transform.forward);
-            _dashPS.Play();
+            // Activar la estela mientras dura el dash
+            _dashTrail.emitting = true;
+        }
+        else if (_wasDashing && !_movement.IsDashing)
+        {
+            // Al terminar el dash, dejar de emitir (la estela existente se desvanece sola)
+            _dashTrail.emitting = false;
         }
 
         _wasDashing = _movement.IsDashing;
     }
 
     // ============================================================
-    // CREACIÓN DE PARTICLE SYSTEMS POR CÓDIGO
+    // CREACIÓN POR CÓDIGO
     // ============================================================
 
     private void CreateDustSystem()
@@ -162,72 +171,52 @@ public class PlayerParticles : MonoBehaviour
         renderer.material = mat;
     }
 
-    private void CreateDashSystem()
+    private void CreateDashTrail()
     {
-        GameObject dashObj = new GameObject("DashParticles");
-        dashObj.transform.SetParent(transform);
-        dashObj.transform.localPosition = Vector3.zero;
-        dashObj.transform.localRotation = Quaternion.identity;
+        // Crear hijo para el TrailRenderer (posicionado en el centro del jugador)
+        GameObject trailObj = new GameObject("DashTrail");
+        trailObj.transform.SetParent(transform);
+        trailObj.transform.localPosition = new Vector3(0f, 0.5f, 0f);
 
-        _dashPS = dashObj.AddComponent<ParticleSystem>();
-        _dashPS.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        _dashTrail = trailObj.AddComponent<TrailRenderer>();
 
-        // Main
-        var main = _dashPS.main;
-        main.duration = 0.3f;
-        main.loop = false;
-        main.playOnAwake = false;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(0.2f, 0.4f);
-        main.startSpeed = new ParticleSystem.MinMaxCurve(8f, 14f);
-        main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.08f);
-        main.startColor = dashColor;
-        main.gravityModifier = 0f;
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.maxParticles = dashParticleCount;
+        // Duración: cuánto tarda en desaparecer la estela
+        _dashTrail.time = trailFadeTime;
 
-        // Emission: burst al inicio
-        var emission = _dashPS.emission;
-        emission.enabled = true;
-        emission.rateOverTime = 0f;
-        emission.SetBursts(new ParticleSystem.Burst[] {
-            new ParticleSystem.Burst(0f, (short)dashParticleCount)
-        });
+        // Ancho: empieza ancho y se adelgaza (como el blink de Tracer)
+        _dashTrail.widthMultiplier = trailWidth;
+        AnimationCurve widthCurve = new AnimationCurve();
+        widthCurve.AddKey(0f, 1f);
+        widthCurve.AddKey(0.5f, 0.6f);
+        widthCurve.AddKey(1f, 0f);
+        _dashTrail.widthCurve = widthCurve;
 
-        // Shape: cono estrecho (líneas de velocidad)
-        var shape = _dashPS.shape;
-        shape.enabled = true;
-        shape.shapeType = ParticleSystemShapeType.Cone;
-        shape.angle = 8f;
-        shape.radius = 0.15f;
-
-        // Stretch las partículas para que parezcan líneas de viento
-        var renderer = dashObj.GetComponent<ParticleSystemRenderer>();
-        renderer.renderMode = ParticleSystemRenderMode.Stretch;
-        renderer.lengthScale = 3f;
-        renderer.velocityScale = 0.1f;
-        Material mat = new Material(Shader.Find("Sprites/Default"));
-        mat.color = dashColor;
-        renderer.material = mat;
-
-        // Color over lifetime: desvanecerse rápido
-        var colorOverLifetime = _dashPS.colorOverLifetime;
-        colorOverLifetime.enabled = true;
-        Gradient dashGradient = new Gradient();
-        dashGradient.SetKeys(
+        // Color: gradiente de color intenso → transparente
+        Gradient trailGradient = new Gradient();
+        trailGradient.SetKeys(
             new GradientColorKey[] {
-                new GradientColorKey(Color.white, 0f),
-                new GradientColorKey(dashColor, 0.3f)
+                new GradientColorKey(trailStartColor, 0f),
+                new GradientColorKey(trailEndColor, 1f)
             },
             new GradientAlphaKey[] {
-                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(trailStartColor.a, 0f),
+                new GradientAlphaKey(0.5f, 0.3f),
                 new GradientAlphaKey(0f, 1f)
             }
         );
-        colorOverLifetime.color = dashGradient;
+        _dashTrail.colorGradient = trailGradient;
 
-        // Size over lifetime
-        var sizeOverLifetime = _dashPS.sizeOverLifetime;
-        sizeOverLifetime.enabled = true;
-        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
+        // Material
+        Material trailMat = new Material(Shader.Find("Sprites/Default"));
+        trailMat.color = Color.white; // El color viene del gradient
+        _dashTrail.material = trailMat;
+
+        // Suavizado
+        _dashTrail.minVertexDistance = 0.05f;
+        _dashTrail.numCornerVertices = 4;
+        _dashTrail.numCapVertices = 4;
+
+        // Empieza desactivado
+        _dashTrail.emitting = false;
     }
 }
